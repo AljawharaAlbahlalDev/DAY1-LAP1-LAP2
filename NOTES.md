@@ -4,6 +4,13 @@
 Inspect `data/raw/bayan_raw_sample.csv` and document at least six defect classes.
 For each one record: example, why it matters, and clean/preserve/task-dependent.
 
+1. Unicode variations
+2. Tatweel
+3. Arabic-English code-switching
+4. PII: phone numbers and national IDs
+5. Emoji
+6. HTML remnants 
+
 ### Defect 1
 - Class:
 - Example:

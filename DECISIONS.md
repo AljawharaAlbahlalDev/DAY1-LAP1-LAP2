@@ -1,11 +1,20 @@
 # Decision Records
 
 ## tokenizer
-- Chosen checkpoint(s):
-- Arabic fertility evidence:
-- English fertility evidence:
-- p95 length evidence:
-- Operational trade-off / rationale:
+For Arabic-focused Bayan tasks, CAMeLBERT is the preferred checkpoint.
+Evidence:
+- Arabic fertility: 1.41, the lowest among the four candidates
+- Arabic p95 sequence length: 20 tokens
+- This means less subword fragmentation and shorter Arabic sequences
+
+For bilingual workloads, XLM-R is a strong balanced option:
+- Arabic fertility: 1.67
+- English fertility: 1.43
+- p95: 21 AR / 23 EN
+
+Decision:
+- CAMeLBERT for Arabic-centric tasks
+- XLM-R for balanced bilingual tasks
 
 ## arabic-model
 - Incumbent:
