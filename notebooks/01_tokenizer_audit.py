@@ -53,7 +53,7 @@ def main():
         en_fertility = fertility(tokenizer, en_texts)
 
         # Sequence lengths 
-        #بعد ما حولت النص إلى tokens، كم token صار طوله؟  87
+        #نحسب عدد التوكنز الناتجة لكل نص عربي من كل النصوص المدخلة، ونخزن هذه الأطوال في list.
         ar_lengths = [
             len(tokenizer.encode(text, add_special_tokens=True))
             for text in ar_texts
