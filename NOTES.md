@@ -11,41 +11,6 @@ For each one record: example, why it matters, and clean/preserve/task-dependent.
 5. Emoji
 6. HTML remnants 
 
-### Defect 1
-- Class:
-- Example:
-- Why it matters:
-- Decision:
-
-### Defect 2
-- Class:
-- Example:
-- Why it matters:
-- Decision:
-
-### Defect 3
-- Class:
-- Example:
-- Why it matters:
-- Decision:
-
-### Defect 4
-- Class:
-- Example:
-- Why it matters:
-- Decision:
-
-### Defect 5
-- Class:
-- Example:
-- Why it matters:
-- Decision:
-
-### Defect 6
-- Class:
-- Example:
-- Why it matters:
-- Decision:
 
 ## Lab 2 — Transformer Anatomy
 

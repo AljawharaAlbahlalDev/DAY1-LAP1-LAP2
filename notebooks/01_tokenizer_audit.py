@@ -81,10 +81,10 @@ if __name__ == "__main__":
     main()
     
     
-    # python notebooks/01_tokenizer_audit.py
 
 
 """
+output will be:
 Arabic rows:  7200
 English rows: 4800
 

@@ -1,132 +1,160 @@
-"""Lab 2: inspect scaled dot-product attention and multi-head attention."""
+"""Lab 2 — Step 2: Transformer anatomy."""
+from transformers import AutoModel, AutoTokenizer
+
+"""
+1. يجرب Attention حقنا
+2. يقارنه بـ PyTorch
+3. يطبع Attention weights
+4. يجرب MultiHeadAttention ويتأكد من 
+"""
 
 import math
 
 import torch
 import torch.nn.functional as F
-from transformers import AutoModel, AutoTokenizer
+
 from bayan.attention import attention, MultiHeadAttention
 
 
 def main():
     # ---------------------------------------------------------
-    # 1) Create a tiny toy example: 4 tokens, 1 attention head
+    # 1) Create a small toy example
     # ---------------------------------------------------------
+
     torch.manual_seed(0)
 
-    batch = 1
-    heads = 1
-    seq_len = 4
-    d_k = 8
-    #" أعطي Attention vectors عشوائية وأختبر هل الحساب الرياضي اللي كتبته مطابق لـPyTorch."
-    q = torch.randn(batch, heads, seq_len, d_k)
-    k = torch.randn(batch, heads, seq_len, d_k)
-    v = torch.randn(batch, heads, seq_len, d_k)
+    # batch = 1
+    # heads = 1
+    # tokens = 4
+    # d_k = 8
+    q = torch.randn(1, 1, 4, 8)
+    k = torch.randn(1, 1, 4, 8)
+    v = torch.randn(1, 1, 4, 8)
+
 
     # ---------------------------------------------------------
-    # 2) Our attention vs PyTorch attention
+    # 2) Compare our Attention with PyTorch
     # ---------------------------------------------------------
+
+    # Result from our implementation
     actual = attention(q, k, v)
 
-    expected = F.scaled_dot_product_attention(
-        q,
-        k,
-        v,
-    )
+    # Result from PyTorch implementation
+    expected = F.scaled_dot_product_attention(q, k, v)
 
+    # They should be almost identical
     assert torch.allclose(actual, expected, atol=1e-6)
 
-    print("Attention equivalence: PASSED (atol=1e-6)")
+    print("Attention equivalence: PASSED")
+
 
     # ---------------------------------------------------------
-    # 3) Calculate the attention weights for inspection
+    # 3) Inspect Attention weights
     # ---------------------------------------------------------
+
+    # Same calculation from attention():
+    # Q @ K^T
     scores = q @ k.transpose(-2, -1)
-    scores = scores / math.sqrt(d_k)
 
+    # Scale
+    scores = scores / math.sqrt(q.size(-1))
+
+    # Softmax -> attention weights
     weights = torch.softmax(scores, dim=-1)
 
     print("\nAttention weights:")
     print(weights[0, 0].round(decimals=2))
 
-    # Before training these weights are based on random vectors,
-    # so we should NOT interpret them as meaningful language patterns.
+    # Each row should sum to 1
+    print("\nRow sums:")
+    print(weights[0, 0].sum(dim=-1))
+
 
     # ---------------------------------------------------------
-    # 4) Multi-Head Attention
+    # 4) Exercise Multi-Head Attention
     # ---------------------------------------------------------
+
+    # BERT Base:
+    # d_model = 768
+    # heads = 12
     mha = MultiHeadAttention(
         d_model=768,
-        n_heads=12,
+        n_heads=12
     )
 
-    n_params = sum(
-        p.numel()
-        for p in mha.parameters()
-    )
-
-    print(f"\nMHA parameters: {n_params:,}")
-
-    # Small input just to verify the output shape
+    # Fake input:
+    # batch=1, tokens=4, vector size=768
     x = torch.randn(1, 4, 768)
 
+    # Run Multi-Head Attention
     output = mha(x)
 
-    print("MHA input shape: ", x.shape)
+    print("\nMHA input shape: ", x.shape)
     print("MHA output shape:", output.shape)
 
+    # Input and output should have same shape
+    assert output.shape == x.shape
+
+    print("Multi-Head Attention: PASSED")
 
     # ---------------------------------------------------------
-    # 5) Causal mask
+    # Step 4 — Causal Mask
     # ---------------------------------------------------------
 
+    # 1) Create a lower-triangular mask for 4 tokens
     causal_mask = torch.tril(
-        torch.ones(seq_len, seq_len)
-    ).bool()
-
-    causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)
+        torch.ones(4, 4, dtype=torch.bool)
+    )
 
     print("\nCausal mask:")
-    print(causal_mask[0, 0].int())
+    print(causal_mask.int())
 
-    # Recalculate scores
-    causal_scores = q @ k.transpose(-2, -1)
-    causal_scores = causal_scores / math.sqrt(d_k)
+    # 2) Add batch and head dimensions
+    # [4, 4] -> [1, 1, 4, 4]
+    causal_mask = causal_mask.unsqueeze(0).unsqueeze(0)
 
-    # Block future tokens BEFORE softmax
-    causal_scores = causal_scores.masked_fill(
+    # 3) Calculate attention scores
+    scores = q @ k.transpose(-2, -1)
+
+    # 4) Scale
+    scores = scores / math.sqrt(q.size(-1))
+
+    # 5) Block future tokens BEFORE softmax
+    scores = scores.masked_fill(
         causal_mask == 0,
         float("-inf")
     )
 
-    causal_weights = torch.softmax(
-        causal_scores,
-        dim=-1
-    )
+    # 6) Convert scores to attention weights
+    causal_weights = torch.softmax(scores, dim=-1)
 
     print("\nCausal attention weights:")
     print(causal_weights[0, 0].round(decimals=2))
 
-    # Verify that no attention goes to future positions
-    assert torch.all(
-        causal_weights[0, 0].triu(diagonal=1) == 0
-    )
+    # 7) Verify that future attention is zero
+    future_attention = causal_weights[0, 0].triu(diagonal=1)
+
+    assert torch.all(future_attention == 0)
 
     print("\nCausal mask check: PASSED")
-    print("Architecture family: Decoder")
-
-
-    # ---------------------------------------------------------
-    # 6) Attention on real Arabic text
-    # ---------------------------------------------------------
+    print("Architecture family: Decoder-style causal attention")
+    
+    # =========================================================
+    # STEP 5 — Attention Maps on real Arabic text
+    # =========================================================
 
     print("\n" + "=" * 60)
-    print("STEP 6 — REAL ARABIC ATTENTION")
+    print("STEP 5 — REAL ARABIC ATTENTION")
     print("=" * 60)
 
-    checkpoint = "CAMeL-Lab/bert-base-arabic-camelbert-mix"
+    checkpoint = (
+        "CAMeL-Lab/"
+        "bert-base-arabic-camelbert-mix"
+    )
 
-    tokenizer = AutoTokenizer.from_pretrained(checkpoint)
+    tokenizer = AutoTokenizer.from_pretrained(
+        checkpoint
+    )
 
     model = AutoModel.from_pretrained(
         checkpoint,
@@ -140,6 +168,7 @@ def main():
     ]
 
     for text in sentences:
+
         encoded = tokenizer(
             text,
             return_tensors="pt",
@@ -158,7 +187,9 @@ def main():
         )
 
         real_length = int(
-            encoded["attention_mask"][0].sum().item()
+            encoded["attention_mask"][0]
+            .sum()
+            .item()
         )
 
         print("\nTEXT:")
@@ -168,45 +199,69 @@ def main():
         print(tokens[:real_length])
 
         print(
-            "Attention tensor shape:",
+            "\nAttention tensor shape:",
             attentions[0].shape
         )
 
+
         # -----------------------------------------------------
-        # Find a candidate head that attends to nearby tokens
+        # Find candidate adjacency head
         # -----------------------------------------------------
 
         best_adj_score = -1.0
         best_adj_layer = None
         best_adj_head = None
 
+        # Try every Layer
         for layer_index, layer_attention in enumerate(attentions):
 
-            for head_index in range(layer_attention.shape[1]):
+            # Try every Head
+            for head_index in range(
+                layer_attention.shape[1]
+            ):
 
-                weights = layer_attention[0, head_index]
+                weights = (
+                    layer_attention[
+                        0,
+                        head_index
+                    ]
+                )
 
                 adjacency_scores = []
 
                 # Ignore [CLS] and [SEP]
-                for i in range(1, real_length - 1):
+                for i in range(
+                    1,
+                    real_length - 1
+                ):
 
                     neighbours = []
 
+                    # Left neighbour
                     if i - 1 >= 1:
-                        neighbours.append(weights[i, i - 1])
+                        neighbours.append(
+                            weights[i, i - 1]
+                        )
 
+                    # Right neighbour
                     if i + 1 < real_length - 1:
-                        neighbours.append(weights[i, i + 1])
+                        neighbours.append(
+                            weights[i, i + 1]
+                        )
 
                     if neighbours:
                         adjacency_scores.append(
-                            torch.stack(neighbours).sum()
+                            torch.stack(
+                                neighbours
+                            ).sum()
                         )
 
                 if adjacency_scores:
+
                     score = (
-                        torch.stack(adjacency_scores)
+                        torch.stack(
+                            adjacency_scores
+                        )
                         .mean()
                         .item()
                     )
@@ -223,8 +278,9 @@ def main():
             f" score={best_adj_score:.4f}"
         )
 
+
         # -----------------------------------------------------
-        # Find a candidate head that attends strongly to [SEP]
+        # Find candidate [SEP] sink
         # -----------------------------------------------------
 
         sep_index = tokens.index("[SEP]")
@@ -235,12 +291,23 @@ def main():
 
         for layer_index, layer_attention in enumerate(attentions):
 
-            for head_index in range(layer_attention.shape[1]):
+            for head_index in range(
+                layer_attention.shape[1]
+            ):
 
-                weights = layer_attention[0, head_index]
+                weights = (
+                    layer_attention[
+                        0,
+                        head_index
+                    ]
+                )
 
+                # Average Attention going TO [SEP]
                 sep_score = (
-                    weights[:real_length, sep_index]
+                    weights[
+                        :real_length,
+                        sep_index
+                    ]
                     .mean()
                     .item()
                 )
@@ -258,15 +325,18 @@ def main():
         )
 
 
-    # ---------------------------------------------------------
-    # 7) PAD attention leakage
-    # ---------------------------------------------------------
+    # =========================================================
+    # STEP 5 — PAD Leak diagnostic
+    # =========================================================
 
     print("\n" + "=" * 60)
-    print("STEP 7 — PAD LEAK")
+    print("STEP 5 — PAD LEAK")
     print("=" * 60)
 
-    text = "انقطعت الكهرباء في حي النرجس منذ ثلاث ساعات"
+    text = (
+        "انقطعت الكهرباء في حي النرجس "
+        "منذ ثلاث ساعات"
+    )
 
     encoded = tokenizer(
         text,
@@ -280,41 +350,55 @@ def main():
         encoded["input_ids"][0]
     )
 
+    # Find [PAD] positions
+
     pad_positions = [
         i
         for i, token in enumerate(tokens)
         if token == "[PAD]"
     ]
 
+    print("\nPAD positions:")
+    print(pad_positions)
+
+    # Only real tokens are used as Queries
     real_query_positions = (
-        encoded["attention_mask"][0].bool()
+        encoded["attention_mask"][0]
+        .bool()
     )
 
+
     # ---------------------------------------------------------
-    # WITH attention mask
+    # Run WITH attention mask
     # ---------------------------------------------------------
 
     with torch.inference_mode():
-        outputs_with_mask = model(**encoded)
+        outputs_with_mask = model(
+            **encoded
+        )
 
-    # Use a deeper layer/head for the diagnostic
+    # Inspect one deeper Layer / Head
     layer = 8
     head = 3
 
     weights_with_mask = (
-        outputs_with_mask.attentions[layer][0, head]
+        outputs_with_mask
+        .attentions[layer][0, head]
     )
 
+    # How much Attention goes to PAD?
     pad_mass_with_mask = (
-        weights_with_mask[real_query_positions]
-        [:, pad_positions]
+        weights_with_mask[
+            real_query_positions
+        ][:, pad_positions]
         .sum(dim=-1)
         .mean()
         .item()
     )
 
+
     # ---------------------------------------------------------
-    # WITHOUT attention mask
+    # Run WITHOUT attention mask
     # ---------------------------------------------------------
 
     encoded_without_mask = {
@@ -329,32 +413,45 @@ def main():
         )
 
     weights_without_mask = (
-        outputs_without_mask.attentions[layer][0, head]
+        outputs_without_mask
+        .attentions[layer][0, head]
     )
 
     pad_mass_without_mask = (
-        weights_without_mask[real_query_positions]
-        [:, pad_positions]
+        weights_without_mask[
+            real_query_positions
+        ][:, pad_positions]
         .sum(dim=-1)
         .mean()
         .item()
     )
 
+
+    # ---------------------------------------------------------
+    # Compare
+    # ---------------------------------------------------------
+
     print(
-        f"PAD attention mass WITH mask:    "
+        "\nPAD attention mass WITH mask:    "
         f"{pad_mass_with_mask:.6f}"
     )
 
     print(
-        f"PAD attention mass WITHOUT mask: "
+        "PAD attention mass WITHOUT mask: "
         f"{pad_mass_without_mask:.6f}"
     )
 
+    # With correct mask,
+    # Attention to PAD should be almost zero.
+
     assert pad_mass_with_mask < 0.01
 
-    print("PAD leak regression check: PASSED")
+    print("\nPAD leak regression check: PASSED")
+
+    
 if __name__ == "__main__":
     main()
+    
     """
     1) Attention vs PyTorch
     2) Attention weights 4×4
@@ -363,10 +460,10 @@ if __name__ == "__main__":
     5) Causal mask
     6) Real Arabic attention
     7) PAD leak
-    """
+
     
     
-    """
+
 python notebooks/02_transformer_anatomy.py
 Attention equivalence: PASSED (atol=1e-6)
 
@@ -455,5 +552,22 @@ Input:  [1, 4, 768]
 Output: [1, 4, 768]
 
 MHA params = 2,362,368
+
+
+Step 5
+│
+├─ حمّل CAMeLBERT الحقيقي
+│
+├─ دخّل جمل عربية
+│
+├─ طلع Attention لكل Layer / Head
+│
+├─ شوف Head يركز على الكلمات المجاورة
+│
+├─ شوف Head يركز على [SEP]
+│
+└─ احذف attention_mask عمدًا
+       ↓
+   هل بدأ يركز على [PAD]؟
     """
     

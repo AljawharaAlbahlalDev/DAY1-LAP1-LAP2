@@ -13,6 +13,21 @@
 - Golden preprocessing: 25/ 25 passed
 - PII masking recall: 60 / 60 = 100%
 
+
+## Lab 2 — Step 5: Attention diagnostics
+| Metric | Result |
+|---|---:|
+| Candidate adjacency layer | <YOUR_LAYER> |
+| Candidate adjacency head | <YOUR_HEAD> |
+| Candidate adjacency score | <YOUR_SCORE> |
+| Candidate [SEP]-sink layer | <YOUR_LAYER> |
+| Candidate [SEP]-sink head | <YOUR_HEAD> |
+| Candidate [SEP]-sink score | <YOUR_SCORE> |
+| PAD attention mass WITH mask | <YOUR_VALUE> |
+| PAD attention mass WITHOUT mask | <YOUR_VALUE> |
+
+PAD leak regression check: PASSED
+
 ## Lab 3 — Models
 | Model | Metric | Validation | Frozen test | Train time |
 |---|---|---:|---:|---:|
@@ -59,3 +74,9 @@
 - HTTP p99, 16 concurrent:
 - classifier quantisation decision:
 - NER quantisation decision:
+
+## Lab 3A — TF-IDF Baseline
+
+| Model | Metric | Validation | Frozen Test |
+|---|---|---:|---:|
+| TF-IDF + LinearSVC | macro-F1 | 1.0000 | 1.0000 |

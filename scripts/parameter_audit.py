@@ -1,11 +1,12 @@
 """Lab 2: parameter accounting for mBERT and CAMeLBERT."""
 
 from collections import defaultdict
-
 from transformers import AutoModel
 
-
 def audit(checkpoint: str) -> dict:
+    
+    #    هل الموديل الأكبر حجمه بسبب الاتنشن ولا بسبب الفوكابلري  والامبدنق ؟
+#البرامتر هي الأرقام اللي الموديل يتعلمها أثناء التدريب
     # Load the pretrained model
     model = AutoModel.from_pretrained(checkpoint)
 
@@ -87,6 +88,9 @@ if __name__ == "__main__":
 
 
         python scripts/parameter_audit.py
+        
+        
+        
         
 ============================================================
 bert-base-multilingual-cased
