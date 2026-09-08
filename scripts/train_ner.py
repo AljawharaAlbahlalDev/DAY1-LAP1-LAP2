@@ -386,4 +386,22 @@ CAMeLBERT
 → label لكل كلمة/token
     
     
+    
+    bayan_ner.conll
+→ Split: 3200 train / 400 validation / 400 test
+→ Tokenizer
+→ align_labels()
+→ CAMeLBERT pretrained encoder
+→ New Token Classification Head
+→ Fine-tuning for 4 epochs
+→ seqeval validation
+→ Frozen test
+→ test_f1 = 1.00
+→ Save artifacts/ner
+
+NER entity-level F1: 1.00
+Precision: 1.00
+Recall: 1.00
+Accuracy: 1.00
+GPU: Tesla T4
     """
