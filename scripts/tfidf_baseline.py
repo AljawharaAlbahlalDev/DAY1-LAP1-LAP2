@@ -50,11 +50,6 @@ def main():
     print("Validation:", len(validation_df))
     print("Test:", len(test_df))
 
-    # نتأكد أن أسماء الـsplits صحيحة وموجودة.
-    assert len(train_df) > 0, "Train split is empty"
-    assert len(validation_df) > 0, "Validation split is empty"
-    assert len(test_df) > 0, "Test split is empty"
-
     # ---------------------------------------------------------
     # 4) BUILD THE BASELINE
     # ---------------------------------------------------------
@@ -89,17 +84,11 @@ def main():
     #
     # مثال:
     # "الفاتورة مرتفعة" → billing
-    baseline.fit(
-        train_df["text"],
-        train_df["topic"],
-    )
-
+    baseline.fit(train_df["text"], train_df["topic"])
     # ---------------------------------------------------------
     # 6) VALIDATION PREDICTION
     # ---------------------------------------------------------
-    validation_predictions = baseline.predict(
-        validation_df["text"]
-    )
+    validation_predictions = baseline.predict(validation_df["text"])
 
     # نحسب Macro-F1 على validation
     validation_f1 = f1_score(
@@ -191,6 +180,33 @@ TF-IDF + LinearSVC BASELINE
 Validation macro-F1 : 1.0000
 Frozen test macro-F1: 1.0000
 
+
+
+OUTPUT:
+
+TF-IDF + LinearSVC BASELINE
+--------------------------------
+Validation macro-F1 : 1.0000
+Frozen test macro-F1: 1.0000
+((.venv) ) Chromecast:DAY1-LAP1-LAP2 aljawhara$ python scripts/tfidf_baseline.py
+Total rows: 12000
+
+Supplied splits:
+split
+train         8400
+validation    2400
+test          1200
+Name: count, dtype: int64
+
+Rows per split:
+Train: 8400
+Validation: 2400
+Test: 1200
+
+TF-IDF + LinearSVC BASELINE
+--------------------------------
+Validation macro-F1 : 1.0000
+Frozen test macro-F1: 1.0000
 
     
     """

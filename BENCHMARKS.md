@@ -80,3 +80,21 @@ PAD leak regression check: PASSED
 | Model | Metric | Validation | Frozen Test |
 |---|---|---:|---:|
 | TF-IDF + LinearSVC | macro-F1 | 1.0000 | 1.0000 |
+
+## Lab 3A — TF-IDF Baseline
+
+| Model | Metric | Validation | Frozen Test |
+|---|---|---:|---:|
+| TF-IDF + LinearSVC | macro-F1 | 1.0000 | 1.0000 |
+
+## Lab 3A — TF-IDF Baseline
+
+| Model | Metric | Validation | Frozen Test |
+|---|---|---:|---:|
+| TF-IDF + LinearSVC | macro-F1 | 1.0000 | 1.0000 |
+
+## Lab 3A — TF-IDF Baseline
+
+| Model | Metric | Validation | Frozen Test |
+|---|---|---:|---:|
+| TF-IDF + LinearSVC | macro-F1 | 1.0000 | 1.0000 |
