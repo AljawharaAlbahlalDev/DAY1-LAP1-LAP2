@@ -16,3 +16,16 @@ CASES = [
 @pytest.mark.parametrize("word_ids,labels,expected", CASES)
 def test_align_labels(word_ids, labels, expected):
     assert align_labels(word_ids, labels) == expected
+
+
+    """
+    what we do: 
+
+    word_ids  = [None, 0, None]
+    word_labels   = [3]
+    expected      = [-100, 3, -100]
+
+    None  → special token → -100
+    0     → أول كلمة → label حقها 3
+    None  → special token → -100
+    """
