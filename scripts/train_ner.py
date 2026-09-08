@@ -31,8 +31,8 @@ LABELS = [
     "I-LOCATION",
     "B-DATE",
     "I-DATE",
-    "B-REF_NUM",
-    "I-REF_NUM",
+    "B-REFERENCE",
+    "I-REFERENCE",
     "B-ORG",
     "I-ORG",
 ]
