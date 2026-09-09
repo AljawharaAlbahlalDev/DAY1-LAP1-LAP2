@@ -5,6 +5,10 @@ import re
 import unicodedata
 
 
+from camel_tools.disambig.mle import MLEDisambiguator
+from camel_tools.tokenizers.morphological import MorphologicalTokenizer
+from camel_tools.tokenizers.word import simple_word_tokenize
+
 @dataclass(frozen=True)
 
 class ArabicProfile:
@@ -71,22 +75,79 @@ def normalize_arabic(text: str, profile: ArabicProfile) -> str:
 
     return normalized
 
+
+# ---------------------------------------------------------
+# تحميل أدوات الـsegmentation مرة وحدة
+#
+# MLEDisambiguator:
+# يساعد يختار التحليل الصرفي الأنسب للكلمة
+#
+# MorphologicalTokenizer:
+# يفصل الـclitics حسب scheme اسمها d3tok
+# ---------------------------------------------------------
+
+_disambig = MLEDisambiguator.pretrained()
+
+_seg = MorphologicalTokenizer(
+    _disambig,
+    scheme="d3tok",
+    split=True
+)
+
 def segment(text: str) -> list[str]:
 
-    # في Step 3 بنستخدم CAMeL Tools
-    # لتقسيم الـclitics مثل:
-    # وبالرياض
-    # إلى شيء قريب من:
-    # و + ب + ال + رياض
-    # عشان LOCATION "رياض"
-    # يصير ظاهر بشكل أوضح للـNER model.
     # ---------------------------------------------------------
-    raise NotImplementedError
+    # STEP 1: نقسم النص إلى كلمات عادية أولاً
+    #
+    # مثال:
+    # "انقطعت الكهرباء وبالرياض"
+    #
+    # ممكن تصير:
+    # ["انقطعت", "الكهرباء", "وبالرياض"]
+    # ---------------------------------------------------------
+    words = simple_word_tokenize(text)
+
+
+    # ---------------------------------------------------------
+    # STEP 2: Morphological segmentation
+    #
+    # نفصل اللواصق/clitics
+    #
+    # مثال:
+    #
+    # وبالرياض
+    #
+    # تقريبًا:
+    # و+ ب+ ال+ رياض
+    #
+    # وهنا "رياض" تصير token واضح
+    # والـNER يقدر يعطيها B-LOCATION
+    # ---------------------------------------------------------
+    return _seg.tokenize(words)
 
 
 
-    """
+"""
+
+part1
     test
     pytest tests/test_arabic_normalize.py -q
+    then call csv file to reach dataset : data/eval/arabic_normalize_golden.csv
+    
+    OUTPUT:
+    30 passed in 1.50s
+    
+    
+part 3
+test sgemntaion
 
-    """
+python -c "from bayan.preprocessing.arabic import segment; print(segment('وبالرياض'))"
+['و+', 'ب+', 'ال+', 'رياض']
+
+python -c "from bayan.preprocessing.arabic import segment; print(segment('انقطعت الكهرباء وبالرياض تأخرت الصيانة'))"
+['انقطعت', 'ال+', 'كهرباء', 'و+', 'ب+', 'ال+', 'رياض', 'تأخرت', 'ال+', 'صيانة']
+
+then wire the segmentation choice consistently into the NER data/training path using colab
+
+    
+"""
