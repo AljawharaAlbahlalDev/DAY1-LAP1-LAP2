@@ -10,12 +10,8 @@ from bayan.models.qa import best_span
 
 # ---------------------------------------------------------
 # Public QA checkpoint from Hugging Face.
-#
-# مرجع المدرب يفترض أن فيه QA checkpoint جاهز للّاب.
-# بما إن الـcheckpoint الأصلي مو موجود في الـstarter عندنا،
-# نستخدم public fine-tuned QA model كبديل.
-#
 # هذا الموديل مدرب على SQuAD 2.0،
+
 # يعني يعرف يتعامل مع:
 # - Questions لها جواب داخل الـContext
 # - Questions ما لها جواب ويرجع لها No Answer
