@@ -9,19 +9,16 @@ from sentence_transformers import SentenceTransformer
 
 
 # ---------------------------------------------------------
-# الـBi-Encoder المستخدم لتحويل النصوص إلى Embeddings
-#
-# Multilingual:
-# يعني يدعم العربي والإنجليزي في نفس embedding space.
+# Multilingual bi-encoder
+# يحول النصوص العربية والإنجليزية إلى embeddings
+# في نفس vector space
 # ---------------------------------------------------------
 MODEL_NAME = "sentence-transformers/paraphrase-multilingual-MiniLM-L12-v2"
 
 
 # ---------------------------------------------------------
-# نسخة الـpreprocessing.
-#
-# نحفظها في الـmanifest حتى نعرف بأي preprocessing
-# انبنى هذا الـindex.
+# نسخة الـpreprocessing المستخدمة عند بناء الـindex
+# نحفظها داخل الـmanifest
 # ---------------------------------------------------------
 PREPROC_VERSION = "1.0.0"
 
@@ -37,35 +34,36 @@ def build_index(
     # -----------------------------------------------------
     df = pd.read_csv(cases_csv)
 
-    # يستخدمها الـtest عشان ما نضطر نبني 20 ألف vector
-    # أثناء الاختبار.
-    #
-    # مثال:
-    # limit=20
-    # → نستخدم أول 20 case فقط.
+    # أثناء الـtest نستخدم عدد قليل فقط
+    # مثال: limit=20
     if limit is not None:
         df = df.head(limit).copy()
 
 
     # -----------------------------------------------------
-    # 2) النص اللي بنسوي له Embedding
+    # 2) النص الفعلي الموجود في dataset عندنا
     #
-    # في بيانات Bayan الـsummary هي وصف الحالة.
+    # الـdataset ما فيه summary
+    # فيه case_text
     # -----------------------------------------------------
-    texts = df["summary"].fillna("").astype(str).tolist()
+    texts = (
+        df["case_text"]
+        .fillna("")
+        .astype(str)
+        .tolist()
+    )
 
 
     # -----------------------------------------------------
-    # 3) تحميل الـBi-Encoder
+    # 3) تحميل الـbi-encoder
     # -----------------------------------------------------
     model = SentenceTransformer(MODEL_NAME)
 
 
     # -----------------------------------------------------
-    # 4) تحويل النصوص إلى Embedding vectors
+    # 4) تحويل كل case إلى embedding vector
     #
-    # كل case:
-    #
+    # مثال:
     # "عمود الإنارة معطل"
     #
     # ↓
@@ -81,23 +79,18 @@ def build_index(
 
 
     # -----------------------------------------------------
-    # 5) L2 Normalization
+    # 5) L2 normalization
     #
     # نخلي طول كل vector = 1
     #
-    # وهذا يسمح لنا نستخدم Inner Product
-    # كـcosine similarity.
+    # وبعدها نقدر نستخدم Inner Product
+    # وكأنه cosine similarity
     # -----------------------------------------------------
     faiss.normalize_L2(embeddings)
 
 
     # -----------------------------------------------------
     # 6) إنشاء FAISS index
-    #
-    # embeddings.shape[1]
-    # = عدد الأبعاد لكل vector
-    #
-    # مثال المرجع المتوقع تقريباً dim=384.
     # -----------------------------------------------------
     dim = embeddings.shape[1]
 
@@ -105,23 +98,27 @@ def build_index(
 
 
     # -----------------------------------------------------
-    # 7) إضافة كل الـvectors إلى FAISS
+    # 7) إضافة الـembeddings إلى الـindex
     # -----------------------------------------------------
     index.add(embeddings)
 
 
     # -----------------------------------------------------
-    # تأكد إن الفولدر موجود قبل الحفظ
+    # 8) إنشاء الفولدر إذا ما كان موجود
     # -----------------------------------------------------
     prefix_path = Path(prefix)
-    prefix_path.parent.mkdir(parents=True, exist_ok=True)
+
+    prefix_path.parent.mkdir(
+        parents=True,
+        exist_ok=True,
+    )
 
 
     # -----------------------------------------------------
-    # 8) حفظ FAISS index
+    # 9) حفظ FAISS index
     #
     # مثال:
-    # artifacts/case_index_v1.faiss
+    # case_index_v1.faiss
     # -----------------------------------------------------
     faiss.write_index(
         index,
@@ -130,14 +127,19 @@ def build_index(
 
 
     # -----------------------------------------------------
-    # 9) حفظ Metadata
+    # 10) حفظ metadata
     #
-    # لما FAISS يرجع لنا vector رقم 10،
-    # نحتاج نعرف هذا vector يرجع لأي case.
+    # FAISS يرجع لنا index position فقط
+    # فالـmetadata تربطه بالـcase الحقيقي
     # -----------------------------------------------------
     metadata_columns = [
         column
-        for column in ["case_id", "summary", "resolution", "lang"]
+        for column in [
+            "case_id",
+            "case_text",
+            "resolution",
+            "lang",
+        ]
         if column in df.columns
     ]
 
@@ -148,14 +150,14 @@ def build_index(
 
 
     # -----------------------------------------------------
-    # 10) Manifest
+    # 11) Manifest
     #
-    # هذا مثل بطاقة تعريف للـindex:
+    # الـtest يتأكد تحديدًا من وجود:
     #
-    # بأي model انبنى؟
-    # بأي preprocessing؟
-    # كم vector؟
-    # كم dimension؟
+    # model
+    # preproc_version
+    # n_vectors
+    # dim
     # -----------------------------------------------------
     manifest = {
         "model": MODEL_NAME,
@@ -166,7 +168,7 @@ def build_index(
 
 
     # -----------------------------------------------------
-    # 11) حفظ الـmanifest
+    # 12) حفظ الـmanifest
     # -----------------------------------------------------
     with open(
         f"{prefix}_manifest.json",
@@ -180,8 +182,6 @@ def build_index(
             ensure_ascii=False,
             indent=2,
         )
-        
-        
         
     """
     Case 1:
