@@ -280,6 +280,12 @@ class CaseSearch:
         
         
         """
+        
+        test:
+        
+
+
+
         User query
    ↓
 Bi-Encoder
@@ -296,3 +302,6 @@ Cross-Encoder
    ↓
 أفضل 5 نتائج
         """
+        
+        
+        

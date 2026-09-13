@@ -204,7 +204,7 @@ Case 3:
     
     FAISS يقدر بسرعة يقول:
 
-أقرب vector هو Case 1.
+    أقرب vector هو Case 1.
     
     """
     

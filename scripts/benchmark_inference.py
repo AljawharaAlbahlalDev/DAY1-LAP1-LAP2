@@ -106,6 +106,10 @@ Lab 7 baseline benchmark
 p50: 0.000 ms
 p99: 0.001 ms
 n:   5
-((.venv) ) Chr
+
+warm-up ✅
+measure latency ✅
+p50 ✅
+p99 ✅
         
         """
