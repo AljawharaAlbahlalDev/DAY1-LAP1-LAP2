@@ -1,120 +1,180 @@
-"""Lab 5: two-stage bilingual case search."""
+"""
+Lab 5.2 — Two-stage Search Service
+
+الفكرة:
+1) نحمل الـ FAISS index اللي بنيناه في Lab 5.1.
+2) نحول query إلى embedding باستخدام نفس الـ encoder.
+3) نعمل L2 normalization للـ query.
+4) FAISS يرجع أفضل candidates بسرعة.
+5) Cross-Encoder يعيد ترتيب النتائج بشكل أدق.
+6) إذا أفضل نتيجة أقل من min_score نرجع [] بدل نتيجة غير موثوقة.
+
+تشغيل الاختبار:
+    pytest tests/test_search_contract.py -q
+
+بعد بناء الـ index كامل:
+    python -m bayan.search.service
+"""
 
 import json
 
 import faiss
+import numpy as np
 import pandas as pd
-from sentence_transformers import CrossEncoder, SentenceTransformer
+
+from sentence_transformers import (
+    SentenceTransformer,
+    CrossEncoder,
+)
 
 
-# ---------------------------------------------------------
-# Cross-Encoder المستخدم في المرحلة الثانية
-# يعيد ترتيب النتائج اللي جابها FAISS
-# ---------------------------------------------------------
-RERANKER_MODEL = "cross-encoder/mmarco-mMiniLMv2-L12-H384-v1"
+# الـ Cross-Encoder المستخدم لإعادة ترتيب النتائج.
+RERANKER = (
+    "cross-encoder/"
+    "mmarco-mMiniLMv2-L12-H384-v1"
+)
 
 
 class CaseSearch:
 
-    def __init__(self, prefix: str):
+    def __init__(
+        self,
+        prefix: str,
+    ):
+        """
+        prefix مثال:
 
-        # -------------------------------------------------
-        # 1) تحميل الـManifest
-        #
-        # فيه:
-        # model
-        # preproc_version
-        # n_vectors
-        # dim
-        # -------------------------------------------------
+            artifacts/case_index_v1
+
+        ومنه نقرأ:
+
+            artifacts/case_index_v1.faiss
+            artifacts/case_index_v1_meta.parquet
+            artifacts/case_index_v1_manifest.json
+        """
+
+        # --------------------------------------------------------
+        # 1) Load manifest
+        # --------------------------------------------------------
+
         with open(
             f"{prefix}_manifest.json",
-            "r",
             encoding="utf-8",
         ) as f:
-            self.manifest = json.load(f)
 
+            self.manifest = json.load(
+                f
+            )
 
-        # -------------------------------------------------
-        # 2) التأكد إن الـmanifest يحتوي الأشياء الأساسية
-        # -------------------------------------------------
-        required_keys = [
-            "model",
-            "preproc_version",
-            "n_vectors",
-            "dim",
-        ]
+        # --------------------------------------------------------
+        # 2) Load FAISS index
+        # --------------------------------------------------------
 
-        for key in required_keys:
-            if key not in self.manifest:
-                raise ValueError(
-                    f"Manifest is missing required key: {key}"
-                )
-
-
-        # -------------------------------------------------
-        # 3) تحميل FAISS index
-        #
-        # هذا هو الـindex اللي بنيناه في Part 1
-        # -------------------------------------------------
         self.index = faiss.read_index(
             f"{prefix}.faiss"
         )
 
+        # --------------------------------------------------------
+        # 3) Load metadata
+        # --------------------------------------------------------
 
-        # -------------------------------------------------
-        # 4) تحميل Metadata
-        #
-        # تربط رقم الـvector بالحالة الأصلية
-        # -------------------------------------------------
         self.meta = pd.read_parquet(
             f"{prefix}_meta.parquet"
         )
 
-
-        # -------------------------------------------------
-        # 5) تحميل نفس الـBi-Encoder
-        # المستخدم في بناء الـindex
+        # --------------------------------------------------------
+        # 4) Load SAME encoder used in Lab 5.1
+        # --------------------------------------------------------
         #
-        # مهم جدًا يكون نفس الموديل.
-        # -------------------------------------------------
-        self.encoder = SentenceTransformer(
-            self.manifest["model"]
+        # ما نكتب اسم موديل جديد هنا.
+        # نقرأه من manifest حتى نضمن:
+        #
+        # index encoder == query encoder
+        #
+
+        self.encoder = (
+            SentenceTransformer(
+                self.manifest[
+                    "model"
+                ]
+            )
         )
 
+        # --------------------------------------------------------
+        # 5) Load Cross-Encoder
+        # --------------------------------------------------------
 
-        # -------------------------------------------------
-        # 6) تحميل Cross-Encoder
-        #
-        # هذا يستخدم في Stage 2
-        # عشان يرتب الـcandidates بدقة أعلى.
-        # -------------------------------------------------
-        self.reranker = CrossEncoder(
-            RERANKER_MODEL
+        self.reranker = (
+            CrossEncoder(
+                RERANKER
+            )
         )
 
-
-        # -------------------------------------------------
-        # 7) Integrity checks
+        # --------------------------------------------------------
+        # 6) Load canary
+        # --------------------------------------------------------
         #
-        # نتأكد إن الـindex والmanifest والmetadata
-        # كلهم تابعين لنفس build.
-        # -------------------------------------------------
-        if self.index.ntotal != self.manifest["n_vectors"]:
-            raise ValueError(
-                "Index vector count does not match manifest."
+        # إذا manifest يقول عندنا 20,000 vector
+        # والـ index فعليًا يحتوي رقم ثاني،
+        # معناها الملفات ليست من نفس build/version.
+        #
+
+        assert (
+            self.index.ntotal
+            == self.manifest[
+                "n_vectors"
+            ]
+        ), (
+            "Index and manifest "
+            "do not match."
+        )
+
+        # metadata أيضًا لازم تطابق عدد vectors.
+
+        assert (
+            len(self.meta)
+            == self.index.ntotal
+        ), (
+            "Metadata and FAISS index "
+            "do not match."
+        )
+
+        # --------------------------------------------------------
+        # مهم:
+        # Instructor example يستخدم summary.
+        #
+        # لكن dataset حقنا الحالي يستخدم:
+        #
+        #     case_text
+        #
+        # لذلك نستخدم case_text.
+        # --------------------------------------------------------
+
+        if (
+            "case_text"
+            in self.meta.columns
+        ):
+
+            self.text_column = (
+                "case_text"
             )
 
-        if self.index.d != self.manifest["dim"]:
-            raise ValueError(
-                "Index dimension does not match manifest."
+        elif (
+            "summary"
+            in self.meta.columns
+        ):
+
+            # fallback لو تغيرت نسخة الداتا.
+            self.text_column = (
+                "summary"
             )
 
-        if len(self.meta) != self.manifest["n_vectors"]:
-            raise ValueError(
-                "Metadata row count does not match index."
-            )
+        else:
 
+            raise KeyError(
+                "Expected case_text "
+                "or summary in metadata."
+            )
 
     def search(
         self,
@@ -122,131 +182,206 @@ class CaseSearch:
         k: int = 5,
         candidates: int = 50,
         min_score: float = 0.25,
+        rerank: bool = True,
     ) -> list[dict]:
+        """
+        query:
+            النص اللي نبحث عنه.
 
-        # -------------------------------------------------
-        # لو الـquery فاضي ما نبحث
-        # -------------------------------------------------
-        if query is None or not query.strip():
+        k:
+            عدد النتائج النهائية.
+
+        candidates:
+            عدد النتائج الأولية من FAISS.
+
+        min_score:
+            أقل Cross-Encoder score نقبله.
+
+        rerank:
+            False -> Stage 1 فقط.
+            True  -> Stage 1 + Stage 2.
+        """
+
+        # Query فاضية؟
+        # نرجع [] مباشرة.
+
+        if not query.strip():
             return []
 
+        # --------------------------------------------------------
+        # STAGE 1
+        # Bi-Encoder + FAISS
+        # --------------------------------------------------------
 
-        # -------------------------------------------------
-        # 1) تحويل Query إلى Embedding
-        #
-        # IMPORTANT:
-        # في Part 1 الحالي خزنا case_text بدون
-        # Arabic normalization إضافي،
-        # لذلك هنا نستخدم query كما هي أيضًا
-        # عشان preprocessing يكون consistent.
-        # -------------------------------------------------
-        query_embedding = self.encoder.encode(
+        # نحول query إلى embedding.
+
+        q = self.encoder.encode(
             [query],
             convert_to_numpy=True,
+        ).astype(
+            "float32"
         )
 
-
-        # -------------------------------------------------
-        # 2) L2 Normalization
+        # --------------------------------------------------------
+        # L2 Normalization
+        # --------------------------------------------------------
         #
-        # نفس الشيء اللي سويناه للـcase embeddings
-        # في Part 1.
-        # -------------------------------------------------
+        # لازم query تكون normalized
+        # مثل vectors اللي دخلت الـ index.
+        #
+        # بهذا الشكل Inner Product
+        # يصير قريب من cosine similarity.
+        #
+
+
+
+
+# ================================================================
+# LAB 5.4 — PLANTED BUG
+# ================================================================
+#
+# جربي مؤقتًا تعطيل السطر التالي:
+#
+#     faiss.normalize_L2(q)
+#
+# ثم شغلي:
+#
+#     python notebooks/05_retrieval_eval.py
+#
+# المفروض تلاحظين أن Recall/MRR تتأثر.
+#
+# السبب:
+#
+# بدون L2 normalization،
+# Inner Product ما يعود يقيس اتجاه الـ vectors فقط،
+# بل يتأثر أيضًا بحجم الـ vector.
+#
+# ممكن بعض النتائج تبدو منطقية يدويًا،
+# لكن الـ labelled metrics تكشف أن retrieval الحقيقي أسوأ.
+#
+# بعد التجربة:
+# رجعي السطر ولا تخلينه محذوف.
+# ================================================================
+
         faiss.normalize_L2(
-            query_embedding
+            q
         )
 
+        # ما نطلب candidates أكثر من عدد الـ vectors.
 
-        # -------------------------------------------------
-        # 3) STAGE 1
-        #
-        # FAISS يبحث بسرعة عن أقرب candidates
-        #
-        # مثال:
-        # 20,000 cases
-        #
-        # ↓
-        #
-        # أفضل 50 candidate
-        # -------------------------------------------------
-
-        # ما نطلب candidates أكثر من الموجود بالـindex
-        candidate_count = min(
+        candidates = min(
             candidates,
             self.index.ntotal,
         )
 
-        scores, indices = self.index.search(
-            query_embedding,
-            candidate_count,
+        # Search inside FAISS.
+
+        scores, idx = (
+            self.index.search(
+                q,
+                candidates,
+            )
         )
 
+        # idx shape:
+        #
+        # [[12, 500, 90, ...]]
+        #
+        # يعني row numbers داخل metadata.
 
-        # -------------------------------------------------
-        # FAISS ممكن يرجع -1 إذا ما وجد index صالح
-        # -------------------------------------------------
-        valid_positions = [
-            int(i)
-            for i in indices[0]
-            if i >= 0
+        row_ids = idx[0]
+
+        # FAISS قد يرجع -1 إذا ما وجد position صالح.
+        row_ids = row_ids[
+            row_ids >= 0
         ]
 
-        if not valid_positions:
+        if (
+            len(row_ids)
+            == 0
+        ):
             return []
 
+        # نجيب بيانات الـ candidates.
 
-        # -------------------------------------------------
-        # نجيب الحالات الأصلية من metadata
-        # -------------------------------------------------
-        candidate_df = (
+        cand = (
             self.meta
-            .iloc[valid_positions]
+            .iloc[
+                row_ids
+            ]
             .copy()
-            .reset_index(drop=True)
         )
 
+        # نخزن FAISS score
+        # عشان نقدر نقارنه لاحقًا.
 
-        # نحفظ FAISS score أيضًا
-        candidate_df["bi_score"] = [
-            float(score)
-            for score, idx in zip(scores[0], indices[0])
-            if idx >= 0
+        cand[
+            "bi_score"
+        ] = scores[
+            0
+        ][
+            :len(cand)
         ]
 
+        # --------------------------------------------------------
+        # إذا rerank=False
+        # نرجع نتائج Stage 1 فقط.
+        # --------------------------------------------------------
 
-        # -------------------------------------------------
-        # 4) STAGE 2
+        if not rerank:
+
+            return (
+                cand
+                .head(k)
+                .to_dict(
+                    "records"
+                )
+            )
+
+        # --------------------------------------------------------
+        # STAGE 2
+        # Cross-Encoder Re-ranking
+        # --------------------------------------------------------
         #
-        # Cross-Encoder يشوف:
+        # Cross-Encoder ما يقارن embeddings فقط.
         #
-        # (query, candidate text)
+        # يدخل:
         #
-        # ويعطي score أدق لكل candidate.
-        # -------------------------------------------------
+        #     (query, candidate_text)
+        #
+        # مع بعض داخل model.
+        #
+        # أبطأ، لكن يعطي ترتيب أدق.
+        #
 
         pairs = [
-            (query, case_text)
-            for case_text in candidate_df["case_text"]
-            .fillna("")
-            .astype(str)
+            (
+                query,
+                str(text),
+            )
+            for text
+            in cand[
+                self.text_column
+            ].tolist()
         ]
 
-
-        ce_scores = self.reranker.predict(
-            pairs
+        ce_scores = (
+            self.reranker.predict(
+                pairs
+            )
         )
 
+        cand[
+            "ce_score"
+        ] = np.asarray(
+            ce_scores,
+            dtype=float,
+        )
 
-        candidate_df["ce_score"] = ce_scores
+        # نرتب حسب Cross-Encoder score.
 
-
-        # -------------------------------------------------
-        # 5) إعادة ترتيب النتائج
-        #
-        # أعلى Cross-Encoder score أول
-        # -------------------------------------------------
-        candidate_df = (
-            candidate_df
+        cand = (
+            cand
             .sort_values(
                 "ce_score",
                 ascending=False,
@@ -254,54 +389,88 @@ class CaseSearch:
             .head(k)
         )
 
-
-        # -------------------------------------------------
-        # 6) Honest empty result
-        #
-        # إذا حتى أفضل نتيجة score حقها ضعيف
-        # ما نقول للمستخدم إنها مناسبة.
-        #
-        # نرجع []
-        # -------------------------------------------------
-        if candidate_df.empty:
+        if (
+            len(cand)
+            == 0
+        ):
             return []
 
-        if float(candidate_df["ce_score"].max()) < min_score:
+        # --------------------------------------------------------
+        # Honest empty result
+        # --------------------------------------------------------
+        #
+        # Semantic search دائمًا تقريبًا يقدر يجيب "شيء".
+        #
+        # لكن إذا أفضل score ضعيف جدًا،
+        # الأفضل نقول:
+        #
+        #     ما عندي نتيجة موثوقة
+        #
+        # بدل نرجع نتيجة بالقوة.
+        #
+
+        if (
+            cand[
+                "ce_score"
+            ].max()
+            < min_score
+        ):
             return []
 
-
-        # -------------------------------------------------
-        # 7) تحويل النتائج إلى list of dictionaries
-        # -------------------------------------------------
-        return candidate_df.to_dict(
-            orient="records"
+        return cand.to_dict(
+            "records"
         )
-        
-        
-        
-        """
-        
-        test:
-        
 
 
+if __name__ == "__main__":
 
-        User query
-   ↓
-Bi-Encoder
-   ↓
-Query Embedding
-   ↓
-FAISS
-   ↓
-أفضل 50 Candidate
-   ↓
-Cross-Encoder
-   ↓
-إعادة ترتيب
-   ↓
-أفضل 5 نتائج
-        """
-        
-        
-        
+    # ------------------------------------------------------------
+    # هذا الـ smoke test يحتاج Lab 5.1 index يكون مبني.
+    # ------------------------------------------------------------
+
+    search = CaseSearch(
+        "artifacts/case_index_v1"
+    )
+
+    results = search.search(
+        "street light broken for two weeks",
+        k=3,
+        candidates=50,
+        min_score=0.25,
+    )
+
+    print(
+        f"Returned results: "
+        f"{len(results)}"
+    )
+
+    for result in results:
+
+        print(
+            result[
+                "case_id"
+            ],
+            result[
+                "ce_score"
+            ],
+            result[
+                "case_text"
+            ][:80],
+        )
+
+
+# ================================================================
+# EXPECTED OUTPUT SHAPE
+# ================================================================
+#
+# Returned results: 3
+# <case-id> <score> <case text ...>
+# <case-id> <score> <case text ...>
+# <case-id> <score> <case text ...>
+#
+# Exact IDs / scores will depend on your actual index.
+#
+# Course idea:
+# An English query may retrieve an Arabic historical case
+# because the multilingual bi-encoder places both languages
+# in the same embedding space.

@@ -1,115 +1,269 @@
-"""Lab 7: simple honest p50/p99 benchmark harness."""
+"""
+Lab 7.1 — Real CPU Benchmark
 
+نقيس:
+    p50
+    p99
+    mean latency
+
+قبل أي optimisation.
+
+RUN:
+    export OMP_NUM_THREADS=4
+    python scripts/benchmark_inference.py
+
+مهم:
+لا نقارن GPU result مع CPU result.
+لازم نفس الجهاز ونفس الـthreads.
+"""
+
+import os
 import time
+
 import numpy as np
+import torch
+
+from transformers import (
+    AutoTokenizer,
+    AutoModelForSequenceClassification,
+)
+
+
+MODEL_PATH = (
+    "artifacts/"
+    "topic_classifier"
+)
 
 
 def benchmark(
     predict_fn,
-    inputs,
-    *,
-    warmup=5,
+    texts,
+    warmup=30,
+    iterations=300,
+    seed=42,
 ):
     """
-    Measure inference latency.
+    warmup:
+        أول requests ما نحسبها،
+        لأنها تشمل one-time setup/caching.
 
-    predict_fn:
-        function that runs the model
-
-    inputs:
-        list of model inputs
-
-    Returns:
-        p50 and p99 latency in milliseconds
+    iterations:
+        عدد requests اللي نقيسها.
     """
 
-    if not inputs:
-        raise ValueError("inputs must not be empty")
+    rng = (
+        np.random.default_rng(
+            seed
+        )
+    )
 
-    # -----------------------------------------
-    # 1) Warm-up
-    # أول كم request ما نحسبهم
-    # لأن الموديل يكون توه يتحمل بالذاكرة
-    # -----------------------------------------
-    for x in inputs[:warmup]:
-        predict_fn(x)
+    # نسحب نصوص من production mix.
+
+    sample = [
+        texts[
+            i
+        ]
+        for i
+        in rng.integers(
+            0,
+            len(texts),
+            iterations
+            + warmup,
+        )
+    ]
+
+    # --------------------------------------------
+    # Warm-up
+    # --------------------------------------------
+
+    for text in sample[
+        :warmup
+    ]:
+
+        predict_fn(
+            text
+        )
+
+    # --------------------------------------------
+    # Actual timings
+    # --------------------------------------------
 
     latencies = []
 
-    # -----------------------------------------
-    # 2) Measure every inference
-    # -----------------------------------------
-    for x in inputs:
+    for text in sample[
+        warmup:
+    ]:
 
-        start = time.perf_counter()
+        start = (
+            time.perf_counter()
+        )
 
-        predict_fn(x)
+        predict_fn(
+            text
+        )
 
-        end = time.perf_counter()
+        elapsed_ms = (
+            time.perf_counter()
+            - start
+        ) * 1000
 
-        latency_ms = (end - start) * 1000
+        latencies.append(
+            elapsed_ms
+        )
 
-        latencies.append(latency_ms)
-
-    # -----------------------------------------
-    # 3) Percentiles
-    # -----------------------------------------
-    p50 = float(np.percentile(latencies, 50))
-    p99 = float(np.percentile(latencies, 99))
+    mean_ms = float(
+        np.mean(
+            latencies
+        )
+    )
 
     return {
-        "p50_ms": p50,
-        "p99_ms": p99,
-        "n": len(latencies),
+        "p50_ms": float(
+            np.percentile(
+                latencies,
+                50,
+            )
+        ),
+
+        "p99_ms": float(
+            np.percentile(
+                latencies,
+                99,
+            )
+        ),
+
+        "mean_ms": mean_ms,
+
+        "throughput_rps": (
+            1000
+            / mean_ms
+        ),
     }
 
 
-if __name__ == "__main__":
+def main():
 
-    # -----------------------------------------
-    # Smoke test فقط للتأكد إن الـbenchmark
-    # harness نفسه شغال.
-    #
-    # لاحقاً نستبدل dummy_predict بالموديل الحقيقي.
-    # -----------------------------------------
-    def dummy_predict(text):
-        return len(text)
+    # --------------------------------------------
+    # Pin CPU threads
+    # --------------------------------------------
 
-    sample_inputs = [
-        "بلاغ عن إنارة الشارع",
-        "مشكلة في فاتورة المياه",
-        "طلب إصدار رخصة جديدة",
-        "النفايات لم يتم جمعها",
-        "الخدمة الإلكترونية لا تعمل",
-    ]
-
-    results = benchmark(
-        dummy_predict,
-        sample_inputs,
+    threads = int(
+        os.getenv(
+            "OMP_NUM_THREADS",
+            "4",
+        )
     )
 
-    print("Lab 7 baseline benchmark")
-    print("------------------------")
-    print(f"p50: {results['p50_ms']:.3f} ms")
-    print(f"p99: {results['p99_ms']:.3f} ms")
-    print(f"n:   {results['n']}")
-    
-    
- """
-    test 
-    python scripts/benchmark_inference.py
+    torch.set_num_threads(
+        threads
+    )
 
-    
-    output
-Lab 7 baseline benchmark
-------------------------
-p50: 0.000 ms
-p99: 0.001 ms
-n:   5
+    tokenizer = (
+        AutoTokenizer.from_pretrained(
+            MODEL_PATH
+        )
+    )
 
-warm-up ✅
-measure latency ✅
-p50 ✅
-p99 ✅
-        
-        """
+    model = (
+        AutoModelForSequenceClassification
+        .from_pretrained(
+            MODEL_PATH
+        )
+    )
+
+    model.eval()
+
+    # Representative text lengths.
+    #
+    # إذا data/serving/bench_mix.npy عندكم موجود،
+    # استخدميه بدل هذي الأمثلة.
+
+    texts = [
+        "الإنارة متعطلة",
+
+        (
+            "يوجد تسرب مياه "
+            "في الحي منذ يومين"
+        ),
+
+        (
+            "الخدمة الإلكترونية لا تعمل "
+            "عند محاولة رفع الطلب"
+        ),
+
+        (
+            "أواجه مشكلة متكررة في الخدمة "
+            "منذ عدة أيام وعند محاولة إرسال الطلب "
+            "تظهر رسالة خطأ ولا يتم حفظ البيانات"
+        ),
+    ] * 100
+
+    def predict(
+        text,
+    ):
+
+        batch = tokenizer(
+            text,
+            return_tensors="pt",
+            truncation=True,
+            max_length=128,
+
+            # dynamic padding
+            padding=False,
+        )
+
+        with torch.inference_mode():
+
+            model(
+                **batch
+            )
+
+    result = benchmark(
+        predict,
+        texts,
+    )
+
+    print(
+        "CPU benchmark"
+    )
+
+    print(
+        f"threads: "
+        f"{threads}"
+    )
+
+    print(
+        f"p50: "
+        f"{result['p50_ms']:.2f} ms"
+    )
+
+    print(
+        f"p99: "
+        f"{result['p99_ms']:.2f} ms"
+    )
+
+    print(
+        f"mean: "
+        f"{result['mean_ms']:.2f} ms"
+    )
+
+    print(
+        f"throughput: "
+        f"{result['throughput_rps']:.2f} req/s"
+    )
+
+
+if __name__ == "__main__":
+    main()
+
+
+# EXPECTED SHAPE:
+#
+# CPU benchmark
+# threads: 4
+# p50: <your machine> ms
+# p99: <your machine> ms
+# mean: <your machine> ms
+# throughput: <your machine> req/s
+#
+# ما فيه رقم ثابت لأن CPU يفرق.

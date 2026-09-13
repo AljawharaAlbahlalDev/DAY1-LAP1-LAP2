@@ -1,37 +1,149 @@
-"""Lab 7 + capstone starter: Bayan FastAPI service.
-
-The final service should integrate the outputs of Labs 1-7. Keep this file as
-orchestration; reusable logic belongs in the package modules.
 """
-from fastapi import FastAPI
+Lab 7.5 — FastAPI Serving
 
-app = FastAPI(title="Bayan — Bilingual Citizen-Feedback Intelligence Service")
+RUN:
+
+    uvicorn bayan.serving.api:app \
+        --host 0.0.0.0 \
+        --port 8000
+
+CHECK:
+
+    http://localhost:8000/health
+
+CLASSIFY:
+
+    POST /v1/classify
+"""
+
+import numpy as np
+import torch
+
+from fastapi import (
+    FastAPI,
+)
+
+from pydantic import (
+    BaseModel,
+)
+
+from transformers import (
+    AutoTokenizer,
+    AutoModelForSequenceClassification,
+)
 
 
-@app.get("/health")
+MODEL_PATH = (
+    "artifacts/"
+    "topic_classifier"
+)
+
+
+app = FastAPI(
+    title="Bayan NLP API"
+)
+
+
+tokenizer = (
+    AutoTokenizer
+    .from_pretrained(
+        MODEL_PATH
+    )
+)
+
+
+model = (
+    AutoModelForSequenceClassification
+    .from_pretrained(
+        MODEL_PATH
+    )
+)
+
+
+model.eval()
+
+
+class ClassifyRequest(
+    BaseModel
+):
+    text: str
+
+
+@app.get(
+    "/health"
+)
 def health():
-    return {"status": "starter", "message": "Complete Labs 1-7 and wire startup canaries."}
+
+    return {
+        "status": "ok"
+    }
 
 
-@app.post("/v1/classify")
-def classify(payload: dict):
-    # TODO(Lab 7): shared preprocess -> winning classifier artefact -> response.
-    raise NotImplementedError("Wire the Lab 7 classifier artefact")
+@app.post(
+    "/v1/classify"
+)
+def classify(
+    request: ClassifyRequest,
+):
+
+    batch = tokenizer(
+        request.text,
+        return_tensors="pt",
+        truncation=True,
+        max_length=128,
+    )
+
+    with torch.inference_mode():
+
+        logits = (
+            model(
+                **batch
+            )
+            .logits[0]
+            .numpy()
+        )
+
+    probabilities = np.exp(
+        logits
+        - logits.max()
+    )
+
+    probabilities = (
+        probabilities
+        / probabilities.sum()
+    )
+
+    prediction_id = int(
+        probabilities.argmax()
+    )
+
+    label = (
+        model.config.id2label[
+            prediction_id
+        ]
+    )
+
+    return {
+        "label": label,
+        "score": float(
+            probabilities[
+                prediction_id
+            ]
+        ),
+    }
 
 
-@app.post("/v1/entities")
-def entities(payload: dict):
-    # TODO(Capstone): shared preprocessing/Arabic segmentation -> NER -> case fields.
-    raise NotImplementedError("Wire the NER artefact")
-
-
-@app.post("/v1/search")
-def search(payload: dict):
-    # TODO(Capstone): Lab 5 two-stage bilingual search.
-    raise NotImplementedError("Wire the semantic-search component")
-
-
-@app.post("/v1/analyse")
-def analyse(payload: dict):
-    # TODO(Capstone): one bilingual request -> classification + entities + similar cases.
-    raise NotImplementedError("Assemble the Bayan capstone service")
+# EXPECTED:
+#
+# GET /health
+#
+# {
+#   "status": "ok"
+# }
+#
+# POST /v1/classify
+#
+# {
+#   "label": "<topic>",
+#   "score": 0.xxxx
+# }
